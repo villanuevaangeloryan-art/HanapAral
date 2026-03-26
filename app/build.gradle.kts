@@ -51,6 +51,7 @@ dependencies {
     implementation("com.google.firebase:firebase-config-ktx")         // Remote Config
     implementation("com.google.firebase:firebase-analytics")          // Analytics Support
 
+    implementation("androidx.navigation:navigation-compose:2.8.0") //Navigation
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.0")
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
