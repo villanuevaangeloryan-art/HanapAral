@@ -18,6 +18,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.hanaparal.ui.auth.AuthViewModel
 import com.example.hanaparal.ui.auth.LoginScreen
+import com.example.hanaparal.ui.group.GroupListScreen
 import com.example.hanaparal.ui.home.HomeScreen
 import com.example.hanaparal.ui.profile.ProfileScreen
 import com.example.hanaparal.ui.theme.HanapAralTheme
@@ -110,10 +111,22 @@ class MainActivity : ComponentActivity() {
                                     }
                                 },
                                 onCreateGroup = { /* teammate: navigate to create group */ },
-                                onViewAllGroups = { /* teammate: navigate to group list */ },
+                                onViewAllGroups = {
+                                    navController.navigate("group_list")
+                                },
                                 onGroupClick = { groupId: String -> /* teammate: navigate to group detail */ },
                                 onNotificationClick = { /* teammate: show notifications */ }
                             )
+                        }
+
+                        composable("group_list") {
+                            val currentUser = user
+                            if (currentUser != null) {
+                                GroupListScreen(
+                                    currentUserId = currentUser.uid,
+                                    onBack = { navController.popBackStack() }
+                                )
+                            }
                         }
                     }
                 }

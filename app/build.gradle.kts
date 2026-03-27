@@ -41,15 +41,18 @@ android {
 }
 
 dependencies {
+    // Firebase BoM (keep a single version to avoid conflicts)
     implementation(platform("com.google.firebase:firebase-bom:33.1.0"))
 
-    //Firebase Services
-    implementation("com.google.firebase:firebase-auth-ktx")           // Auth
-    implementation("com.google.android.gms:play-services-auth:21.1.1")// Google Sign-In
-    implementation("com.google.firebase:firebase-firestore-ktx")      // Profile & Groups
-    implementation("com.google.firebase:firebase-messaging-ktx")      // Notifications
-    implementation("com.google.firebase:firebase-config-ktx")         // Remote Config
-    implementation("com.google.firebase:firebase-analytics")          // Analytics Support
+    // Firebase Services
+    implementation("com.google.firebase:firebase-auth-ktx")            // Auth
+    implementation("com.google.firebase:firebase-firestore-ktx")       // Profile & Groups
+    implementation("com.google.firebase:firebase-messaging-ktx")       // Notifications
+    implementation("com.google.firebase:firebase-config-ktx")          // Remote Config
+    implementation("com.google.firebase:firebase-analytics")           // Analytics Support
+
+    // Google Sign-In
+    implementation("com.google.android.gms:play-services-auth:21.1.1")
 
     implementation("androidx.navigation:navigation-compose:2.8.0") //Navigation
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.0")
@@ -69,16 +72,6 @@ dependencies {
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
-
-    // Firebase BoM
-    implementation(platform("com.google.firebase:firebase-bom:32.7.0"))
-
-    // Firebase dependencies
-    implementation("com.google.firebase:firebase-auth-ktx")
-    implementation("com.google.firebase:firebase-firestore-ktx")
-    implementation("com.google.firebase:firebase-messaging-ktx")
-    implementation("com.google.firebase:firebase-config-ktx")
-    implementation("com.google.android.gms:play-services-auth:20.7.0")
 
     implementation("androidx.compose.material:material-icons-extended")
 
