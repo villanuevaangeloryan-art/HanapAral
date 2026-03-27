@@ -9,7 +9,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -19,6 +18,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.hanaparal.ui.auth.AuthViewModel
 import com.example.hanaparal.ui.auth.LoginScreen
+import com.example.hanaparal.ui.home.HomeScreen
+import com.example.hanaparal.ui.profile.ProfileScreen
+import com.example.hanaparal.ui.theme.HanapAralTheme
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
@@ -28,7 +30,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Google Sign-In
         val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
             .requestIdToken(getString(R.string.default_web_client_id))
             .requestEmail()
@@ -36,7 +37,7 @@ class MainActivity : ComponentActivity() {
         val googleSignInClient = GoogleSignIn.getClient(this, gso)
 
         setContent {
-            MaterialTheme {
+            HanapAralTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
@@ -45,7 +46,6 @@ class MainActivity : ComponentActivity() {
                     val navController = rememberNavController()
                     val user by authViewModel.userState.collectAsState()
 
-                    // Google Pop-up result
                     val launcher = rememberLauncherForActivityResult(
                         contract = ActivityResultContracts.StartActivityForResult()
                     ) { result ->
@@ -54,17 +54,19 @@ class MainActivity : ComponentActivity() {
                             val account = task.getResult(ApiException::class.java)
                             val credential = GoogleAuthProvider.getCredential(account.idToken, null)
                             authViewModel.signInWithGoogle(credential) {
-                                // Success: Route to profile screen
                                 navController.navigate("profile") {
                                     popUpTo("login") { inclusive = true }
                                 }
                             }
                         } catch (e: ApiException) {
-                            Toast.makeText(this, "Login Failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Login Failed: ${e.message}",
+                                Toast.LENGTH_SHORT
+                            ).show()
                         }
                     }
 
-                    // Navigation Host
                     val startDest = if (user == null) "login" else "profile"
 
                     NavHost(
@@ -72,13 +74,46 @@ class MainActivity : ComponentActivity() {
                         startDestination = startDest
                     ) {
                         composable("login") {
-                            LoginScreen(onSignInClick = {
-                                launcher.launch(googleSignInClient.signInIntent)
-                            })
+                            LoginScreen(
+                                onSignInClick = {
+                                    launcher.launch(googleSignInClient.signInIntent)
+                                }
+                            )
                         }
+
                         composable("profile") {
-                            // Placeholder for profile
-                            Text(text = "Welcome, ${user?.displayName ?: "User"}! Member 2: Place Profile UI Here.")
+                            val currentUser = user
+                            if (currentUser != null) {
+                                ProfileScreen(
+                                    uid = currentUser.uid,
+                                    email = currentUser.email ?: "",
+                                    onProfileSaved = {
+                                        navController.navigate("home") {
+                                            popUpTo("profile") { inclusive = true }
+                                        }
+                                    }
+                                )
+                            }
+                        }
+
+                        composable("home") {
+                            val currentUser = user
+                            HomeScreen(
+                                userName = currentUser?.displayName ?: "Student",
+                                userCourse = "",
+                                userInitial = currentUser?.displayName?.take(1)?.uppercase() ?: "S",
+                                onSignOut = {
+                                    authViewModel.signOut()
+                                    googleSignInClient.signOut()
+                                    navController.navigate("login") {
+                                        popUpTo(0) { inclusive = true }
+                                    }
+                                },
+                                onCreateGroup = { /* teammate: navigate to create group */ },
+                                onViewAllGroups = { /* teammate: navigate to group list */ },
+                                onGroupClick = { groupId: String -> /* teammate: navigate to group detail */ },
+                                onNotificationClick = { /* teammate: show notifications */ }
+                            )
                         }
                     }
                 }
