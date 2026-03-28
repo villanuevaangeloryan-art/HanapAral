@@ -113,6 +113,7 @@ fun CreateGroupScreen(
                     val ref = db.collection("groups").document()
                     val group = Group(
                         groupId = ref.id,
+                        documentId = ref.id,
                         title = title.trim(),
                         subject = subject.trim(),
                         description = description.trim(),

@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -21,6 +22,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.hanaparal.data.model.Group
+import com.example.hanaparal.data.repository.GroupRepository
+import com.example.hanaparal.data.repository.JoinGroupResult
 import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.ktx.Firebase
 
@@ -28,7 +31,6 @@ import com.google.firebase.ktx.Firebase
 @Composable
 fun GroupListScreen(
     currentUserId: String,
-    currentUserName: String = "",
     onBack: () -> Unit,
     onCreateGroup: () -> Unit = {}
 ) {
@@ -36,37 +38,84 @@ fun GroupListScreen(
     var searchQuery by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(true) }
     var selectedTab by remember { mutableIntStateOf(0) }
+    var joiningDocId by remember { mutableStateOf<String?>(null) }
+
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     val db = Firebase.firestore
 
-    LaunchedEffect(Unit) {
-        db.collection("groups")
-            .addSnapshotListener { snapshot, _ ->
-                if (snapshot != null) {
-                    groups = snapshot.documents.mapNotNull { it.toObject(Group::class.java) }
-                }
+    DisposableEffect(Unit) {
+        val registration = db.collection("groups")
+            .addSnapshotListener { snapshot, error ->
                 isLoading = false
+                if (error != null) {
+                    groups = emptyList()
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    groups = snapshot.documents.mapNotNull { GroupRepository.groupFromDocument(it) }
+                }
             }
+        onDispose { registration.remove() }
     }
 
-    val myGroups = groups.filter { it.members.contains(currentUserId) }
+    val myGroups = remember(groups, currentUserId) {
+        groups.filter { it.members.contains(currentUserId) }
+    }
+    val availableToJoin = remember(groups, currentUserId) {
+        groups.filter { g ->
+            g.isOpen &&
+                !g.members.contains(currentUserId) &&
+                g.members.size < g.maxMembers
+        }
+    }
     val allGroups = groups
 
-    val displayList = (if (selectedTab == 0) myGroups else allGroups).filter {
+    val displayList = when (selectedTab) {
+        0 -> myGroups
+        1 -> availableToJoin
+        else -> allGroups
+    }.filter {
         searchQuery.isBlank() ||
-        it.title.contains(searchQuery, ignoreCase = true) ||
-        it.subject.contains(searchQuery, ignoreCase = true)
+            it.title.contains(searchQuery, ignoreCase = true) ||
+            it.subject.contains(searchQuery, ignoreCase = true)
+    }
+
+    fun onJoinGroup(documentId: String) {
+        joiningDocId = documentId
+        GroupRepository.joinGroup(
+            groupDocumentId = documentId,
+            userId = currentUserId
+        ) { result ->
+            joiningDocId = null
+            val message = when (result) {
+                JoinGroupResult.Success -> "Joined successfully"
+                JoinGroupResult.AlreadyMember -> "You're already in this group"
+                JoinGroupResult.GroupFull -> "This group is full"
+                JoinGroupResult.GroupClosed -> "This group is closed to new members"
+                JoinGroupResult.NotFound -> "Group no longer exists"
+                is JoinGroupResult.Failure -> result.message
+            }
+            scope.launch {
+                snackbarHostState.showSnackbar(message)
+            }
+        }
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
                     Column {
                         Text("Study Groups", fontWeight = FontWeight.Bold)
                         Text(
-                            if (selectedTab == 0) "${myGroups.size} joined"
-                            else "${allGroups.size} available",
+                            when (selectedTab) {
+                                0 -> "${myGroups.size} joined"
+                                1 -> "${availableToJoin.size} open to join"
+                                else -> "${allGroups.size} total"
+                            },
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -116,7 +165,12 @@ fun GroupListScreen(
                 Tab(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
-                    text = { Text("All Groups (${allGroups.size})") }
+                    text = { Text("Join (${availableToJoin.size})") }
+                )
+                Tab(
+                    selected = selectedTab == 2,
+                    onClick = { selectedTab = 2 },
+                    text = { Text("All (${allGroups.size})") }
                 )
             }
 
@@ -130,22 +184,32 @@ fun GroupListScreen(
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            if (selectedTab == 0) "You haven't joined any groups yet."
-                            else "No groups found.",
+                            when (selectedTab) {
+                                0 -> "You haven't joined any groups yet."
+                                1 -> "No groups available to join right now."
+                                else -> "No groups found."
+                            },
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         if (selectedTab == 0) {
                             Spacer(modifier = Modifier.height(8.dp))
                             TextButton(onClick = { selectedTab = 1 }) {
-                                Text("Browse all groups")
+                                Text("Browse groups to join")
                             }
                         }
                     }
                 }
             } else {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    items(displayList) { group ->
-                        GroupCard(group = group, currentUserId = currentUserId)
+                    items(displayList, key = { it.documentId.ifBlank { it.groupId } }) { group ->
+                        val docId = group.documentId.ifBlank { group.groupId }
+                        GroupCard(
+                            group = group,
+                            currentUserId = currentUserId,
+                            showJoinAction = selectedTab == 1 || selectedTab == 2,
+                            isJoining = joiningDocId == docId,
+                            onJoin = { onJoinGroup(docId) }
+                        )
                     }
                     item { Spacer(modifier = Modifier.height(80.dp)) }
                 }
@@ -155,10 +219,20 @@ fun GroupListScreen(
 }
 
 @Composable
-fun GroupCard(group: Group, currentUserId: String) {
+fun GroupCard(
+    group: Group,
+    currentUserId: String,
+    showJoinAction: Boolean = true,
+    isJoining: Boolean = false,
+    onJoin: () -> Unit = {}
+) {
     val initial = group.title.take(1).uppercase()
     val isMember = group.members.contains(currentUserId)
     val isAdmin = group.adminId == currentUserId
+    val canJoin = showJoinAction &&
+        !isMember &&
+        group.isOpen &&
+        group.members.size < group.maxMembers
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -237,31 +311,53 @@ fun GroupCard(group: Group, currentUserId: String) {
 
             Spacer(modifier = Modifier.width(8.dp))
 
-            if (isMember) {
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer
-                ) {
-                    Text(
-                        "Joined",
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-            } else {
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.secondaryContainer
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+            when {
+                isMember -> {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer
                     ) {
-                        Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(12.dp))
-                        Text("Open", fontSize = 12.sp)
+                        Text(
+                            "Joined",
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+                canJoin -> {
+                    Button(
+                        onClick = onJoin,
+                        enabled = !isJoining,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        if (isJoining) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Text("Join", fontSize = 12.sp)
+                        }
+                    }
+                }
+                else -> {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(12.dp))
+                            Text(
+                                if (!group.isOpen) "Closed" else "Full",
+                                fontSize = 12.sp
+                            )
+                        }
                     }
                 }
             }

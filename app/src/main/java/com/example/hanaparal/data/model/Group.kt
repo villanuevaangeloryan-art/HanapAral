@@ -2,6 +2,8 @@ package com.example.hanaparal.data.model
 
 data class Group(
     val groupId: String = "",
+    /** Firestore document ID under `groups/{documentId}` — use for updates (join, etc.). */
+    val documentId: String = "",
     val title: String = "",
     val subject: String = "",
     val description: String = "",

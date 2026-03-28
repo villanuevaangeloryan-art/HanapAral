@@ -135,7 +135,6 @@ class MainActivity : ComponentActivity() {
                             if (currentUser != null) {
                                 GroupListScreen(
                                     currentUserId = currentUser.uid,
-                                    currentUserName = currentUser.displayName ?: "",
                                     onBack = { navController.popBackStack() },
                                     onCreateGroup = { navController.navigate("create_group") }
                                 )
