@@ -11,6 +11,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
@@ -18,8 +19,10 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.hanaparal.ui.auth.AuthViewModel
 import com.example.hanaparal.ui.auth.LoginScreen
+import com.example.hanaparal.ui.group.CreateGroupScreen
 import com.example.hanaparal.ui.group.GroupListScreen
 import com.example.hanaparal.ui.home.HomeScreen
+import com.example.hanaparal.ui.home.HomeViewModel
 import com.example.hanaparal.ui.profile.ProfileScreen
 import com.example.hanaparal.ui.theme.HanapAralTheme
 import com.google.android.gms.auth.api.signin.GoogleSignIn
@@ -99,10 +102,18 @@ class MainActivity : ComponentActivity() {
 
                         composable("home") {
                             val currentUser = user
+                            val homeViewModel: HomeViewModel = viewModel()
+                            val myGroups by homeViewModel.myGroups.collectAsState()
+
+                            LaunchedEffect(currentUser?.uid) {
+                                currentUser?.uid?.let { homeViewModel.loadMyGroups(it) }
+                            }
+
                             HomeScreen(
                                 userName = currentUser?.displayName ?: "Student",
                                 userCourse = "",
                                 userInitial = currentUser?.displayName?.take(1)?.uppercase() ?: "S",
+                                myGroups = myGroups,
                                 onSignOut = {
                                     authViewModel.signOut()
                                     googleSignInClient.signOut()
@@ -110,11 +121,11 @@ class MainActivity : ComponentActivity() {
                                         popUpTo(0) { inclusive = true }
                                     }
                                 },
-                                onCreateGroup = { /* teammate: navigate to create group */ },
+                                onCreateGroup = { navController.navigate("create_group") },
                                 onViewAllGroups = {
                                     navController.navigate("group_list")
                                 },
-                                onGroupClick = { groupId: String -> /* teammate: navigate to group detail */ },
+                                onGroupClick = { _ -> /* teammate: navigate to group detail */ },
                                 onNotificationClick = { /* teammate: show notifications */ }
                             )
                         }
@@ -124,7 +135,21 @@ class MainActivity : ComponentActivity() {
                             if (currentUser != null) {
                                 GroupListScreen(
                                     currentUserId = currentUser.uid,
-                                    onBack = { navController.popBackStack() }
+                                    currentUserName = currentUser.displayName ?: "",
+                                    onBack = { navController.popBackStack() },
+                                    onCreateGroup = { navController.navigate("create_group") }
+                                )
+                            }
+                        }
+
+                        composable("create_group") {
+                            val currentUser = user
+                            if (currentUser != null) {
+                                CreateGroupScreen(
+                                    currentUserId = currentUser.uid,
+                                    currentUserName = currentUser.displayName ?: "",
+                                    onBack = { navController.popBackStack() },
+                                    onGroupCreated = { navController.popBackStack() }
                                 )
                             }
                         }
