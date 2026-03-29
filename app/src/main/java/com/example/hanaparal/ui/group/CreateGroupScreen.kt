@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.hanaparal.data.model.Group
+import com.example.hanaparal.data.repository.GroupRepository
 import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.ktx.Firebase
 
@@ -29,8 +30,6 @@ fun CreateGroupScreen(
     var maxMembersText by remember { mutableStateOf("20") }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
-
-    val db = Firebase.firestore
 
     Scaffold(
         topBar = {
@@ -110,10 +109,7 @@ fun CreateGroupScreen(
                     isLoading = true
                     errorMessage = null
 
-                    val ref = db.collection("groups").document()
                     val group = Group(
-                        groupId = ref.id,
-                        documentId = ref.id,
                         title = title.trim(),
                         subject = subject.trim(),
                         description = description.trim(),
@@ -123,15 +119,15 @@ fun CreateGroupScreen(
                         maxMembers = maxMembers,
                         isOpen = true
                     )
-                    ref.set(group)
-                        .addOnSuccessListener {
-                            isLoading = false
+
+                    GroupRepository.createGroup(group) { success, error ->
+                        isLoading = false
+                        if (success) {
                             onGroupCreated()
+                        } else {
+                            errorMessage = "Failed to create group: $error"
                         }
-                        .addOnFailureListener { e ->
-                            isLoading = false
-                            errorMessage = "Failed to create group: ${e.message}"
-                        }
+                    }
                 },
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !isLoading

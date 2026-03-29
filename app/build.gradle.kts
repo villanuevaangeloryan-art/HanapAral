@@ -41,7 +41,7 @@ android {
 }
 
 dependencies {
-    // Firebase BoM (keep a single version to avoid conflicts)
+    // Firebase BoM
     implementation(platform("com.google.firebase:firebase-bom:33.1.0"))
 
     // Firebase Services
@@ -54,7 +54,7 @@ dependencies {
     // Google Sign-In
     implementation("com.google.android.gms:play-services-auth:21.1.1")
 
-    implementation("androidx.navigation:navigation-compose:2.8.0") //Navigation
+    implementation("androidx.navigation:navigation-compose:2.8.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.0")
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -74,5 +74,4 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 
     implementation("androidx.compose.material:material-icons-extended")
-
 }

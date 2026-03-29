@@ -1,6 +1,10 @@
 package com.example.hanaparal
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -13,6 +17,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -29,6 +34,7 @@ import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
 import com.google.firebase.auth.GoogleAuthProvider
+import com.google.firebase.messaging.FirebaseMessaging
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -49,6 +55,37 @@ class MainActivity : ComponentActivity() {
                     val authViewModel: AuthViewModel = viewModel()
                     val navController = rememberNavController()
                     val user by authViewModel.userState.collectAsState()
+
+                    val permissionLauncher = rememberLauncherForActivityResult(
+                        contract = ActivityResultContracts.RequestPermission()
+                    ) { isGranted ->
+                        if (isGranted) {
+                            Log.d("MainActivity", "Notification permission granted")
+                        } else {
+                            Log.d("MainActivity", "Notification permission denied")
+                        }
+                    }
+
+                    LaunchedEffect(Unit) {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            if (ContextCompat.checkSelfPermission(
+                                    this@MainActivity,
+                                    Manifest.permission.POST_NOTIFICATIONS
+                                ) != PackageManager.PERMISSION_GRANTED
+                            ) {
+                                permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            }
+                        }
+
+                        FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+                            if (!task.isSuccessful) {
+                                Log.w("MainActivity", "Fetching FCM registration token failed", task.exception)
+                                return@addOnCompleteListener
+                            }
+                            val token = task.result
+                            Log.d("MainActivity", "FCM Token: $token")
+                        }
+                    }
 
                     val launcher = rememberLauncherForActivityResult(
                         contract = ActivityResultContracts.StartActivityForResult()

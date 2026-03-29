@@ -86,7 +86,8 @@ fun GroupListScreen(
         joiningDocId = documentId
         GroupRepository.joinGroup(
             groupDocumentId = documentId,
-            userId = currentUserId
+            userId = currentUserId,
+            userName = "" // teammate will provide if needed
         ) { result ->
             joiningDocId = null
             val message = when (result) {

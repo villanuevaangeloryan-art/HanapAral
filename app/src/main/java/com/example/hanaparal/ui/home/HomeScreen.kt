@@ -17,6 +17,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.tooling.preview.Preview
+import com.example.hanaparal.data.model.StudyGroupItem
 
 @Composable
 fun HomeScreen(
@@ -512,14 +513,6 @@ private fun StatItem(value: String, label: String) {
         )
     }
 }
-
-data class StudyGroupItem(
-    val id: String = "",
-    val name: String = "",
-    val course: String = "",
-    val memberCount: Int = 0,
-    val isAdmin: Boolean = false
-)
 
 @Preview(showBackground = true, showSystemUi = true)
 @Composable
