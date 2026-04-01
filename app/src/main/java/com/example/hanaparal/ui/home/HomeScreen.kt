@@ -29,6 +29,7 @@ fun HomeScreen(
     onGroupClick: (String) -> Unit = {},
     onNotificationClick: () -> Unit = {},
     onSignOut: () -> Unit = {},
+    onSettingsClick: () -> Unit = {}, // <-- ADDED: Parameter for Navigation
     myGroups: List<StudyGroupItem> = emptyList(),
     suggestedGroups: List<StudyGroupItem> = emptyList(),
     isCreateGroupEnabled: Boolean = true,
@@ -41,7 +42,8 @@ fun HomeScreen(
                 userName = userName,
                 userInitial = userInitial,
                 onNotificationClick = onNotificationClick,
-                onSignOut = onSignOut
+                onSignOut = onSignOut,
+                onSettingsClick = onSettingsClick // <-- ADDED: Passing to TopBar
             )
         },
         floatingActionButton = {
@@ -109,7 +111,8 @@ private fun HomeTopBar(
     userName: String,
     userInitial: String,
     onNotificationClick: () -> Unit,
-    onSignOut: () -> Unit
+    onSignOut: () -> Unit,
+    onSettingsClick: () -> Unit // <-- ADDED
 ) {
     TopAppBar(
         title = {
@@ -121,6 +124,14 @@ private fun HomeTopBar(
             )
         },
         actions = {
+            // <-- ADDED: Superuser / Settings Gear Icon
+            IconButton(onClick = onSettingsClick) {
+                Icon(
+                    Icons.Outlined.Settings,
+                    contentDescription = "Superuser Settings",
+                    tint = MaterialTheme.colorScheme.onBackground
+                )
+            }
             IconButton(onClick = onNotificationClick) {
                 Icon(
                     Icons.Outlined.Notifications,
