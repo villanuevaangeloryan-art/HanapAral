@@ -6,18 +6,24 @@ import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -29,14 +35,16 @@ import com.example.hanaparal.ui.group.GroupListScreen
 import com.example.hanaparal.ui.home.HomeScreen
 import com.example.hanaparal.ui.home.HomeViewModel
 import com.example.hanaparal.ui.profile.ProfileScreen
+import com.example.hanaparal.ui.settings.SuperuserScreen
 import com.example.hanaparal.ui.theme.HanapAralTheme
+import com.example.hanaparal.util.ConfigManager // <-- IMPORTED YOUR CONFIG MANAGER
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
 import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.messaging.FirebaseMessaging
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -56,6 +64,14 @@ class MainActivity : ComponentActivity() {
                     val navController = rememberNavController()
                     val user by authViewModel.userState.collectAsState()
 
+                    // --- INITIALIZE YOUR CONFIG MANAGER ---
+                    val configManager = remember { ConfigManager() }
+
+                    // Collect the values so the UI updates automatically!
+                    val isCreateGroupEnabled by configManager.isCreationEnabled.collectAsState()
+                    val maxMembers by configManager.maxMembers.collectAsState()
+                    val announcement by configManager.announcement.collectAsState()
+
                     val permissionLauncher = rememberLauncherForActivityResult(
                         contract = ActivityResultContracts.RequestPermission()
                     ) { isGranted ->
@@ -67,6 +83,7 @@ class MainActivity : ComponentActivity() {
                     }
 
                     LaunchedEffect(Unit) {
+                        // Notifications Permission
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                             if (ContextCompat.checkSelfPermission(
                                     this@MainActivity,
@@ -77,13 +94,13 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
+                        // FCM Token
                         FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
                             if (!task.isSuccessful) {
                                 Log.w("MainActivity", "Fetching FCM registration token failed", task.exception)
                                 return@addOnCompleteListener
                             }
-                            val token = task.result
-                            Log.d("MainActivity", "FCM Token: $token")
+                            Log.d("MainActivity", "FCM Token: ${task.result}")
                         }
                     }
 
@@ -100,11 +117,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                         } catch (e: ApiException) {
-                            Toast.makeText(
-                                this@MainActivity,
-                                "Login Failed: ${e.message}",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            Toast.makeText(this@MainActivity, "Login Failed: ${e.message}", Toast.LENGTH_SHORT).show()
                         }
                     }
 
@@ -116,9 +129,7 @@ class MainActivity : ComponentActivity() {
                     ) {
                         composable("login") {
                             LoginScreen(
-                                onSignInClick = {
-                                    launcher.launch(googleSignInClient.signInIntent)
-                                }
+                                onSignInClick = { launcher.launch(googleSignInClient.signInIntent) }
                             )
                         }
 
@@ -144,6 +155,8 @@ class MainActivity : ComponentActivity() {
 
                             LaunchedEffect(currentUser?.uid) {
                                 currentUser?.uid?.let { homeViewModel.loadMyGroups(it) }
+                                // Refresh configs when user arrives at Home
+                                configManager.fetchConfigs()
                             }
 
                             HomeScreen(
@@ -151,6 +164,12 @@ class MainActivity : ComponentActivity() {
                                 userCourse = "",
                                 userInitial = currentUser?.displayName?.take(1)?.uppercase() ?: "S",
                                 myGroups = myGroups,
+
+                                // --- PASSING CONFIG MANAGER DATA TO UI ---
+                                isCreateGroupEnabled = isCreateGroupEnabled,
+                                maxMembersPerGroup = maxMembers.toInt(),
+                                announcementHeader = announcement,
+
                                 onSignOut = {
                                     authViewModel.signOut()
                                     googleSignInClient.signOut()
@@ -159,11 +178,10 @@ class MainActivity : ComponentActivity() {
                                     }
                                 },
                                 onCreateGroup = { navController.navigate("create_group") },
-                                onViewAllGroups = {
-                                    navController.navigate("group_list")
-                                },
-                                onGroupClick = { _ -> /* teammate: navigate to group detail */ },
-                                onNotificationClick = { /* teammate: show notifications */ }
+                                onViewAllGroups = { navController.navigate("group_list") },
+                                onGroupClick = { _ -> },
+                                onNotificationClick = { },
+                                onSettingsClick = { navController.navigate("superuser") }
                             )
                         }
 
@@ -187,6 +205,41 @@ class MainActivity : ComponentActivity() {
                                     onBack = { navController.popBackStack() },
                                     onGroupCreated = { navController.popBackStack() }
                                 )
+                            }
+                        }
+
+                        // --- MEMBER 6: THE BIOMETRIC GATEKEEPER ---
+                        composable("superuser") {
+                            SuperuserScreen(
+                                activity = this@MainActivity,
+                                onAuthenticated = {
+                                    navController.navigate("superuser_dashboard") {
+                                        popUpTo("superuser") { inclusive = true }
+                                    }
+                                }
+                            )
+                        }
+
+                        // --- MEMBER 6: THE SECURE DASHBOARD ---
+                        composable("superuser_dashboard") {
+                            Column(
+                                modifier = Modifier.fillMaxSize().padding(24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Text("Superuser Dashboard", style = MaterialTheme.typography.headlineMedium)
+                                Text("Fingerprint Verified 🔒", modifier = Modifier.padding(vertical = 16.dp))
+                                Text(
+                                    "To toggle features, update strings, and manage state, log in to your Firebase Console and update the Remote Config parameters.",
+                                    textAlign = TextAlign.Center,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Button(
+                                    onClick = { navController.popBackStack() },
+                                    modifier = Modifier.padding(top = 32.dp)
+                                ) {
+                                    Text("Back to Home")
+                                }
                             }
                         }
                     }
