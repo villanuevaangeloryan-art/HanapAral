@@ -31,6 +31,8 @@ import com.google.firebase.ktx.Firebase
 @Composable
 fun GroupListScreen(
     currentUserId: String,
+    maxMembersAllowed: Int = 10,           // <-- Receives rule from ConfigManager
+    isCreateGroupEnabled: Boolean = false, // <-- Receives rule from ConfigManager
     onBack: () -> Unit,
     onCreateGroup: () -> Unit = {}
 ) {
@@ -63,11 +65,14 @@ fun GroupListScreen(
     val myGroups = remember(groups, currentUserId) {
         groups.filter { it.members.contains(currentUserId) }
     }
-    val availableToJoin = remember(groups, currentUserId) {
+
+    // --- UPDATED: Enforce the Firebase Remote Config maxMembers rule here ---
+    val availableToJoin = remember(groups, currentUserId, maxMembersAllowed) {
         groups.filter { g ->
             g.isOpen &&
-                !g.members.contains(currentUserId) &&
-                g.members.size < g.maxMembers
+                    !g.members.contains(currentUserId) &&
+                    // Uses the globally enforced limit from Firebase instead of just the group's internal limit
+                    g.members.size < minOf(g.maxMembers, maxMembersAllowed)
         }
     }
     val allGroups = groups
@@ -78,8 +83,8 @@ fun GroupListScreen(
         else -> allGroups
     }.filter {
         searchQuery.isBlank() ||
-            it.title.contains(searchQuery, ignoreCase = true) ||
-            it.subject.contains(searchQuery, ignoreCase = true)
+                it.title.contains(searchQuery, ignoreCase = true) ||
+                it.subject.contains(searchQuery, ignoreCase = true)
     }
 
     fun onJoinGroup(documentId: String) {
@@ -87,7 +92,7 @@ fun GroupListScreen(
         GroupRepository.joinGroup(
             groupDocumentId = documentId,
             userId = currentUserId,
-            userName = "" // teammate will provide if needed
+            userName = ""
         ) { result ->
             joiningDocId = null
             val message = when (result) {
@@ -130,11 +135,14 @@ fun GroupListScreen(
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = onCreateGroup,
-                icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                text = { Text("Create Group") }
-            )
+            // --- UPDATED: Hide the button if Firebase says false! ---
+            if (isCreateGroupEnabled) {
+                ExtendedFloatingActionButton(
+                    onClick = onCreateGroup,
+                    icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                    text = { Text("Create Group") }
+                )
+            }
         }
     ) { paddingValues ->
         Column(
@@ -207,6 +215,7 @@ fun GroupListScreen(
                         GroupCard(
                             group = group,
                             currentUserId = currentUserId,
+                            globalMaxMembers = maxMembersAllowed, // Pass rule to Card
                             showJoinAction = selectedTab == 1 || selectedTab == 2,
                             isJoining = joiningDocId == docId,
                             onJoin = { onJoinGroup(docId) }
@@ -223,6 +232,7 @@ fun GroupListScreen(
 fun GroupCard(
     group: Group,
     currentUserId: String,
+    globalMaxMembers: Int, // <-- Added parameter
     showJoinAction: Boolean = true,
     isJoining: Boolean = false,
     onJoin: () -> Unit = {}
@@ -230,10 +240,14 @@ fun GroupCard(
     val initial = group.title.take(1).uppercase()
     val isMember = group.members.contains(currentUserId)
     val isAdmin = group.adminId == currentUserId
+
+    // Calculate the actual strict limit based on Remote Config
+    val strictMaxLimit = minOf(group.maxMembers, globalMaxMembers)
+
     val canJoin = showJoinAction &&
-        !isMember &&
-        group.isOpen &&
-        group.members.size < group.maxMembers
+            !isMember &&
+            group.isOpen &&
+            group.members.size < strictMaxLimit // Enforce the strict limit here
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -290,7 +304,8 @@ fun GroupCard(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        "${group.members.size}/${group.maxMembers}",
+                        // Show members out of the strict limit
+                        "${group.members.size}/${strictMaxLimit}",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

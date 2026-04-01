@@ -1,35 +1,33 @@
 package com.example.hanaparal.ui.group
 
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import com.example.hanaparal.data.model.Group
-import com.example.hanaparal.data.repository.GroupRepository
-import com.google.firebase.firestore.ktx.firestore
-import com.google.firebase.ktx.Firebase
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CreateGroupScreen(
     currentUserId: String,
     currentUserName: String,
+    isEditable: Boolean = true,          // <-- Receives the lock state from Firebase
+    defaultMaxMembers: Int = 10,         // <-- Receives the default number from Firebase
     onBack: () -> Unit,
     onGroupCreated: () -> Unit
 ) {
-    var title by remember { mutableStateOf("") }
-    var subject by remember { mutableStateOf("") }
-    var description by remember { mutableStateOf("") }
-    var maxMembersText by remember { mutableStateOf("20") }
-    var isLoading by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var groupName by remember { mutableStateOf("") }
+    var course by remember { mutableStateOf("") }
+    var maxMembersInput by remember { mutableStateOf(defaultMaxMembers.toString()) }
+
+    // If the admin locks the field, force the text box to show the Firebase default number
+    LaunchedEffect(isEditable, defaultMaxMembers) {
+        if (!isEditable) {
+            maxMembersInput = defaultMaxMembers.toString()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -37,110 +35,86 @@ fun CreateGroupScreen(
                 title = { Text("Create Study Group") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 }
             )
         }
-    ) { paddingValues ->
+    ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
-                .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(padding)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             OutlinedTextField(
-                value = title,
-                onValueChange = { title = it },
-                label = { Text("Group Name *") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
+                value = groupName,
+                onValueChange = { groupName = it },
+                label = { Text("Group Name") },
+                modifier = Modifier.fillMaxWidth()
             )
 
             OutlinedTextField(
-                value = subject,
-                onValueChange = { subject = it },
-                label = { Text("Subject *") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
+                value = course,
+                onValueChange = { course = it },
+                label = { Text("Course / Subject") },
+                modifier = Modifier.fillMaxWidth()
             )
 
             OutlinedTextField(
-                value = description,
-                onValueChange = { description = it },
-                label = { Text("Description") },
-                modifier = Modifier.fillMaxWidth(),
-                minLines = 3,
-                maxLines = 5
-            )
-
-            OutlinedTextField(
-                value = maxMembersText,
-                onValueChange = { maxMembersText = it.filter { c -> c.isDigit() } },
+                value = maxMembersInput,
+                onValueChange = { maxMembersInput = it },
                 label = { Text("Max Members") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                enabled = isEditable, // <--- THIS IS THE FIREBASE LOCK!
+                modifier = Modifier.fillMaxWidth()
             )
 
-            if (errorMessage != null) {
+            // Show a warning message if the field is locked
+            if (!isEditable) {
                 Text(
-                    text = errorMessage!!,
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall
+                    text = "Max members is currently locked by the Administrator.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
                 )
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.weight(1f))
 
             Button(
                 onClick = {
-                    if (title.isBlank()) {
-                        errorMessage = "Group name is required."
-                        return@Button
-                    }
-                    if (subject.isBlank()) {
-                        errorMessage = "Subject is required."
-                        return@Button
-                    }
-                    val maxMembers = maxMembersText.toIntOrNull()?.coerceIn(2, 100) ?: 20
-                    isLoading = true
-                    errorMessage = null
+                    // 1. Get the Firestore instance
+                    val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
 
-                    val group = Group(
-                        title = title.trim(),
-                        subject = subject.trim(),
-                        description = description.trim(),
-                        adminId = currentUserId,
-                        adminName = currentUserName,
-                        members = listOf(currentUserId),
-                        maxMembers = maxMembers,
-                        isOpen = true
+                    // 2. Prepare the data to save
+                    val newGroup = hashMapOf(
+                        "title" to groupName,
+                        "subject" to course,
+                        "maxMembers" to (maxMembersInput.toIntOrNull() ?: defaultMaxMembers),
+                        "adminId" to currentUserId,
+                        "adminName" to currentUserName,
+                        "members" to listOf(currentUserId), // Admin is automatically the first member
+                        "isOpen" to true,
+                        "description" to ""
                     )
 
-                    GroupRepository.createGroup(group) { success, error ->
-                        isLoading = false
-                        if (success) {
+                    // 3. Save to Firebase Database
+                    db.collection("groups")
+                        .add(newGroup)
+                        .addOnSuccessListener {
+                            // Successfully saved! Now close the screen.
                             onGroupCreated()
-                        } else {
-                            errorMessage = "Failed to create group: $error"
                         }
-                    }
+                        .addOnFailureListener { e ->
+                            // If it fails, you can log it or show a toast here
+                            println("Error adding group: $e")
+                        }
                 },
                 modifier = Modifier.fillMaxWidth(),
-                enabled = !isLoading
+                // Button is grayed out until all fields are filled
+                enabled = groupName.isNotBlank() && course.isNotBlank() && maxMembersInput.isNotBlank()
             ) {
-                if (isLoading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary
-                    )
-                } else {
-                    Text("Create Group")
-                }
+                Text("Create Group")
             }
         }
     }

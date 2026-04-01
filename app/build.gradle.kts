@@ -54,6 +54,8 @@ dependencies {
     // Google Sign-In
     implementation("com.google.android.gms:play-services-auth:21.1.1")
 
+    implementation("androidx.biometric:biometric:1.1.0")
+
     implementation("androidx.navigation:navigation-compose:2.8.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.0")
     implementation(libs.androidx.core.ktx)
