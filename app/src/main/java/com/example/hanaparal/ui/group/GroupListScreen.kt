@@ -1,227 +1,160 @@
 package com.example.hanaparal.ui.group
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Clear
+import androidx.compose.material.icons.outlined.Groups
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.example.hanaparal.data.model.Group
 import com.example.hanaparal.data.repository.GroupRepository
-import com.example.hanaparal.data.repository.JoinGroupResult
-import com.google.firebase.firestore.ktx.firestore
-import com.google.firebase.ktx.Firebase
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GroupListScreen(
     currentUserId: String,
-    maxMembersAllowed: Int = 10,           // <-- Receives rule from ConfigManager
-    isCreateGroupEnabled: Boolean = false, // <-- Receives rule from ConfigManager
     onBack: () -> Unit,
-    onCreateGroup: () -> Unit = {}
+    onCreateGroup: () -> Unit,
+    onGroupClick: (String) -> Unit
 ) {
     var groups by remember { mutableStateOf<List<Group>>(emptyList()) }
-    var searchQuery by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(true) }
-    var selectedTab by remember { mutableIntStateOf(0) }
-    var joiningDocId by remember { mutableStateOf<String?>(null) }
 
-    val snackbarHostState = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
+    // New States for Search and Tabs
+    var searchQuery by remember { mutableStateOf("") }
+    var selectedTabIndex by remember { mutableStateOf(0) }
+    val tabs = listOf("Joined Groups", "Available Groups")
 
-    val db = Firebase.firestore
-
-    DisposableEffect(Unit) {
-        val registration = db.collection("groups")
-            .addSnapshotListener { snapshot, error ->
-                isLoading = false
-                if (error != null) {
-                    groups = emptyList()
-                    return@addSnapshotListener
-                }
-                if (snapshot != null) {
-                    groups = snapshot.documents.mapNotNull { GroupRepository.groupFromDocument(it) }
-                }
-            }
-        onDispose { registration.remove() }
-    }
-
-    val myGroups = remember(groups, currentUserId) {
-        groups.filter { it.members.contains(currentUserId) }
-    }
-
-    // --- UPDATED: Enforce the Firebase Remote Config maxMembers rule here ---
-    val availableToJoin = remember(groups, currentUserId, maxMembersAllowed) {
-        groups.filter { g ->
-            g.isOpen &&
-                    !g.members.contains(currentUserId) &&
-                    // Uses the globally enforced limit from Firebase instead of just the group's internal limit
-                    g.members.size < minOf(g.maxMembers, maxMembersAllowed)
+    LaunchedEffect(Unit) {
+        GroupRepository.getAllGroups { fetchedGroups ->
+            groups = fetchedGroups
+            isLoading = false
         }
     }
-    val allGroups = groups
 
-    val displayList = when (selectedTab) {
-        0 -> myGroups
-        1 -> availableToJoin
-        else -> allGroups
-    }.filter {
-        searchQuery.isBlank() ||
-                it.title.contains(searchQuery, ignoreCase = true) ||
+    // Filter Logic Search Query
+    val filteredGroups = groups.filter {
+        it.title.contains(searchQuery, ignoreCase = true) ||
                 it.subject.contains(searchQuery, ignoreCase = true)
     }
 
-    fun onJoinGroup(documentId: String) {
-        joiningDocId = documentId
-        GroupRepository.joinGroup(
-            groupDocumentId = documentId,
-            userId = currentUserId,
-            userName = ""
-        ) { result ->
-            joiningDocId = null
-            val message = when (result) {
-                JoinGroupResult.Success -> "Joined successfully"
-                JoinGroupResult.AlreadyMember -> "You're already in this group"
-                JoinGroupResult.GroupFull -> "This group is full"
-                JoinGroupResult.GroupClosed -> "This group is closed to new members"
-                JoinGroupResult.NotFound -> "Group no longer exists"
-                is JoinGroupResult.Failure -> result.message
-            }
-            scope.launch {
-                snackbarHostState.showSnackbar(message)
-            }
-        }
-    }
+    val joinedGroups = filteredGroups.filter { it.members.contains(currentUserId) }
+    val availableGroups = filteredGroups.filter { !it.members.contains(currentUserId) }
+
+    val activeList = if (selectedTabIndex == 0) joinedGroups else availableGroups
 
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = {
-                    Column {
-                        Text("Study Groups", fontWeight = FontWeight.Bold)
-                        Text(
-                            when (selectedTab) {
-                                0 -> "${myGroups.size} joined"
-                                1 -> "${availableToJoin.size} open to join"
-                                else -> "${allGroups.size} total"
-                            },
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                },
+                title = { Text("Browse Study Groups", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 }
             )
         },
         floatingActionButton = {
-            // --- UPDATED: Hide the button if Firebase says false! ---
-            if (isCreateGroupEnabled) {
-                ExtendedFloatingActionButton(
-                    onClick = onCreateGroup,
-                    icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                    text = { Text("Create Group") }
-                )
+            FloatingActionButton(
+                onClick = onCreateGroup,
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
+            ) {
+                Icon(Icons.Outlined.Add, contentDescription = "Create Group")
             }
         }
     ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(horizontal = 16.dp)
-        ) {
-            Spacer(modifier = Modifier.height(8.dp))
+        Column(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
 
+            // Search Bar
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                placeholder = { Text("Search by name or subject...") },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                shape = RoundedCornerShape(50)
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            TabRow(selectedTabIndex = selectedTab) {
-                Tab(
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
-                    text = { Text("My Groups (${myGroups.size})") }
-                )
-                Tab(
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
-                    text = { Text("Join (${availableToJoin.size})") }
-                )
-                Tab(
-                    selected = selectedTab == 2,
-                    onClick = { selectedTab = 2 },
-                    text = { Text("All (${allGroups.size})") }
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            if (isLoading) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
-                }
-            } else if (displayList.isEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            when (selectedTab) {
-                                0 -> "You haven't joined any groups yet."
-                                1 -> "No groups available to join right now."
-                                else -> "No groups found."
-                            },
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        if (selectedTab == 0) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            TextButton(onClick = { selectedTab = 1 }) {
-                                Text("Browse groups to join")
-                            }
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                placeholder = { Text("Search groups or subjects...") },
+                leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = "Search") },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Icon(Icons.Outlined.Clear, contentDescription = "Clear")
                         }
                     }
+                },
+                shape = RoundedCornerShape(16.dp),
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    unfocusedBorderColor = MaterialTheme.colorScheme.surfaceVariant,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            )
+
+            // Tabs for Separation
+            TabRow(
+                selectedTabIndex = selectedTabIndex,
+                containerColor = MaterialTheme.colorScheme.background
+            ) {
+                tabs.forEachIndexed { index, title ->
+                    Tab(
+                        selected = selectedTabIndex == index,
+                        onClick = { selectedTabIndex = index },
+                        text = {
+                            Text(
+                                text = title,
+                                fontWeight = if (selectedTabIndex == index) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
+                    )
+                }
+            }
+
+            // Dynamic List Content
+            if (isLoading) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            } else if (activeList.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    val emptyMessage = if (searchQuery.isNotEmpty()) {
+                        "No groups match your search."
+                    } else if (selectedTabIndex == 0) {
+                        "You haven't joined any groups yet."
+                    } else {
+                        "No new groups available to join."
+                    }
+                    Text(emptyMessage, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             } else {
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    items(displayList, key = { it.documentId.ifBlank { it.groupId } }) { group ->
-                        val docId = group.documentId.ifBlank { group.groupId }
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    item { Spacer(Modifier.height(8.dp)) }
+
+                    items(activeList) { group ->
                         GroupCard(
                             group = group,
                             currentUserId = currentUserId,
-                            globalMaxMembers = maxMembersAllowed, // Pass rule to Card
-                            showJoinAction = selectedTab == 1 || selectedTab == 2,
-                            isJoining = joiningDocId == docId,
-                            onJoin = { onJoinGroup(docId) }
+                            onClick = { onGroupClick(group.documentId.ifEmpty { group.groupId }) }
                         )
                     }
-                    item { Spacer(modifier = Modifier.height(80.dp)) }
+
+                    item { Spacer(Modifier.height(80.dp)) }
                 }
             }
         }
@@ -229,152 +162,53 @@ fun GroupListScreen(
 }
 
 @Composable
-fun GroupCard(
-    group: Group,
-    currentUserId: String,
-    globalMaxMembers: Int, // <-- Added parameter
-    showJoinAction: Boolean = true,
-    isJoining: Boolean = false,
-    onJoin: () -> Unit = {}
-) {
-    val initial = group.title.take(1).uppercase()
+fun GroupCard(group: Group, currentUserId: String, onClick: () -> Unit) {
     val isMember = group.members.contains(currentUserId)
-    val isAdmin = group.adminId == currentUserId
-
-    // Calculate the actual strict limit based on Remote Config
-    val strictMaxLimit = minOf(group.maxMembers, globalMaxMembers)
-
-    val canJoin = showJoinAction &&
-            !isMember &&
-            group.isOpen &&
-            group.members.size < strictMaxLimit // Enforce the strict limit here
+    val isFull = group.members.size >= group.maxMembers
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
         Row(
-            modifier = Modifier.padding(12.dp),
+            modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 modifier = Modifier
                     .size(48.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.primary),
+                    .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(12.dp)),
                 contentAlignment = Alignment.Center
             ) {
-                Text(initial, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                Icon(Icons.Outlined.Groups, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
             }
 
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(16.dp))
 
             Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Text(group.title, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    if (isAdmin) {
-                        Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = MaterialTheme.colorScheme.primaryContainer
-                        ) {
-                            Text(
-                                "Admin",
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                fontSize = 10.sp,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                    }
-                }
-                Text(group.subject, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.Person,
-                        contentDescription = null,
-                        modifier = Modifier.size(14.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        // Show members out of the strict limit
-                        "${group.members.size}/${strictMaxLimit}",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        "• ${group.adminName.ifBlank { "Admin" }}",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                if (group.description.isNotBlank()) {
-                    Text(
-                        group.description,
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1
-                    )
-                }
+                Text(text = group.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(text = group.subject, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
-            Spacer(modifier = Modifier.width(8.dp))
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = "${group.members.size}/${group.maxMembers}",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Bold
+                )
 
-            when {
-                isMember -> {
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer
-                    ) {
-                        Text(
-                            "Joined",
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
-                canJoin -> {
-                    Button(
-                        onClick = onJoin,
-                        enabled = !isJoining,
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                    ) {
-                        if (isJoining) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                strokeWidth = 2.dp
-                            )
-                        } else {
-                            Text("Join", fontSize = 12.sp)
-                        }
-                    }
-                }
-                else -> {
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.secondaryContainer
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(12.dp))
-                            Text(
-                                if (!group.isOpen) "Closed" else "Full",
-                                fontSize = 12.sp
-                            )
-                        }
-                    }
+                Spacer(modifier = Modifier.height(4.dp))
+
+                if (isMember) {
+                    Text(text = "Joined", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                } else if (isFull) {
+                    Text(text = "Full", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                } else {
+                    Text(text = "Join", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold)
                 }
             }
         }

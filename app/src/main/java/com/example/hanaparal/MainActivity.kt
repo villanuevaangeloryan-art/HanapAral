@@ -14,22 +14,23 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.example.hanaparal.data.model.Group
 import com.example.hanaparal.ui.auth.AuthViewModel
 import com.example.hanaparal.ui.auth.LoginScreen
 import com.example.hanaparal.ui.group.CreateGroupScreen
+import com.example.hanaparal.ui.group.GroupDetailsScreen
 import com.example.hanaparal.ui.group.GroupListScreen
 import com.example.hanaparal.ui.home.HomeScreen
 import com.example.hanaparal.ui.home.HomeViewModel
 import com.example.hanaparal.ui.profile.ProfileScreen
 import com.example.hanaparal.ui.profile.ProfileViewModel
+import com.example.hanaparal.ui.settings.SuperuserDashboardScreen // <-- FIXED: Added this import!
 import com.example.hanaparal.ui.settings.SuperuserScreen
 import com.example.hanaparal.ui.theme.HanapAralTheme
 import com.example.hanaparal.util.ConfigManager
@@ -46,56 +47,38 @@ class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Google Sign-In Setup
         val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
             .requestIdToken(getString(R.string.default_web_client_id))
-            .requestEmail()
-            .build()
+            .requestEmail().build()
         val googleSignInClient = GoogleSignIn.getClient(this, gso)
 
         setContent {
             HanapAralTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
+                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     val authViewModel: AuthViewModel = viewModel()
                     val profileViewModel: ProfileViewModel = viewModel()
                     val navController = rememberNavController()
                     val user by authViewModel.userState.collectAsState()
-
-                    // Initialize Config Manager
                     val configManager = remember { ConfigManager() }
 
-                    // Get values from Remote Config
                     val isCreateGroupEnabled by configManager.isCreationEnabled.collectAsState()
                     val maxMembers by configManager.maxMembers.collectAsState()
                     val announcement by configManager.announcement.collectAsState()
-                    val isMaxEditable by configManager.isMaxMemberEditable.collectAsState()
+                    val isMaxEditable by configManager.isMaxMemberEditable.collectAsState() // <-- FIXED: Now it exists again
 
-                    // Loading states for checking profile
                     var isLoadingProfile by remember { mutableStateOf(true) }
                     var hasProfile by remember { mutableStateOf(false) }
 
-                    // Check if the student already has a profile in Firestore
                     LaunchedEffect(user) {
-                        val currentUser = user
-                        if (currentUser != null) {
-                            profileViewModel.loadProfile(currentUser.uid) { student ->
+                        if (user != null) {
+                            profileViewModel.loadProfile(user!!.uid) { student ->
                                 hasProfile = student != null && student.name.isNotBlank()
                                 isLoadingProfile = false
                             }
-                        } else {
-                            isLoadingProfile = false
-                        }
+                        } else { isLoadingProfile = false }
                     }
 
-                    // Notification Permission Launcher
-                    val permissionLauncher = rememberLauncherForActivityResult(
-                        contract = ActivityResultContracts.RequestPermission()
-                    ) { isGranted ->
-                        Log.d("MainActivity", "Permission: $isGranted")
-                    }
+                    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
                     LaunchedEffect(Unit) {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -104,23 +87,17 @@ class MainActivity : FragmentActivity() {
                             }
                         }
                         FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
-                            if (task.isSuccessful) Log.d("MainActivity", "Token: ${task.result}")
+                            if (task.isSuccessful) Log.d("FCM", "Token: ${task.result}")
                         }
                     }
 
-                    // Google Login Launcher
-                    val launcher = rememberLauncherForActivityResult(
-                        contract = ActivityResultContracts.StartActivityForResult()
-                    ) { result ->
+                    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
                         val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
                         try {
                             val account = task.getResult(ApiException::class.java)
-                            val credential = GoogleAuthProvider.getCredential(account.idToken, null)
-                            authViewModel.signInWithGoogle(credential) {
-                                // Re-check if profile exists after logging in
-                                val db = Firebase.firestore
+                            authViewModel.signInWithGoogle(GoogleAuthProvider.getCredential(account.idToken, null)) {
                                 Firebase.auth.currentUser?.uid?.let { uid ->
-                                    db.collection("users").document(uid).get().addOnSuccessListener { doc ->
+                                    Firebase.firestore.collection("users").document(uid).get().addOnSuccessListener { doc ->
                                         if (doc.exists() && !doc.getString("name").isNullOrBlank()) {
                                             navController.navigate("home") { popUpTo("login") { inclusive = true } }
                                         } else {
@@ -129,101 +106,84 @@ class MainActivity : FragmentActivity() {
                                     }
                                 }
                             }
-                        } catch (e: ApiException) {
-                            Toast.makeText(this@MainActivity, "Sign-in Failed", Toast.LENGTH_SHORT).show()
-                        }
+                        } catch (_: ApiException) { Toast.makeText(this@MainActivity, "Login Failed", Toast.LENGTH_SHORT).show() }
                     }
 
                     if (isLoadingProfile) {
-                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator()
-                        }
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                     } else {
-                        // Choose starting screen
-                        val startDest = when {
-                            user == null -> "login"
-                            hasProfile -> "home"
-                            else -> "profile"
-                        }
+                        NavHost(navController = navController, startDestination = if (user == null) "login" else if (hasProfile) "home" else "profile") {
+                            composable("login") { LoginScreen(onSignInClick = { launcher.launch(googleSignInClient.signInIntent) }) }
 
-                        NavHost(navController = navController, startDestination = startDest) {
-                            // User Authentication
-                            composable("login") {
-                                LoginScreen(onSignInClick = { launcher.launch(googleSignInClient.signInIntent) })
-                            }
-
-                            // Student Profile Management
                             composable("profile") {
-                                user?.let { currentUser ->
-                                    ProfileScreen(
-                                        uid = currentUser.uid,
-                                        email = currentUser.email ?: "",
-                                        onProfileSaved = {
-                                            navController.navigate("home") {
-                                                popUpTo("profile") { inclusive = true }
-                                            }
-                                        }
-                                    )
-                                }
+                                ProfileScreen(uid = user?.uid ?: "", email = user?.email ?: "", onProfileSaved = { navController.navigate("home") { popUpTo("profile") { inclusive = true } } })
                             }
 
-                            // Dashboard
                             composable("home") {
-                                val currentUser = user
                                 val homeViewModel: HomeViewModel = viewModel()
                                 val myGroups by homeViewModel.myGroups.collectAsState()
-
-                                LaunchedEffect(currentUser?.uid) {
-                                    currentUser?.uid?.let { homeViewModel.loadMyGroups(it) }
-                                    configManager.fetchConfigs()
-                                }
+                                LaunchedEffect(user?.uid) { user?.uid?.let { homeViewModel.loadMyGroups(it) }; configManager.fetchConfigs() }
 
                                 HomeScreen(
-                                    userName = currentUser?.displayName ?: "Student",
-                                    userInitial = currentUser?.displayName?.take(1)?.uppercase() ?: "S",
+                                    userName = user?.displayName ?: "Student",
+                                    userInitial = user?.displayName?.take(1)?.uppercase() ?: "S",
                                     myGroups = myGroups,
                                     isCreateGroupEnabled = isCreateGroupEnabled,
                                     maxMembersPerGroup = maxMembers.toInt(),
                                     announcementHeader = announcement,
                                     onUnlockClick = { navController.navigate("superuser") },
-                                    onSignOut = {
-                                        authViewModel.signOut()
-                                        googleSignInClient.signOut()
-                                        navController.navigate("login") { popUpTo(0) { inclusive = true } }
-                                    },
+                                    onSignOut = { authViewModel.signOut(); googleSignInClient.signOut(); navController.navigate("login") { popUpTo(0) { inclusive = true } } },
                                     onCreateGroup = { navController.navigate("create_group") },
                                     onViewAllGroups = { navController.navigate("group_list") },
+                                    onGroupClick = { groupId -> navController.navigate("group_details/$groupId") },
                                     onSettingsClick = { navController.navigate("superuser") }
                                 )
                             }
 
-                            // Join Study Groups
                             composable("group_list") {
-                                user?.let { currentUser ->
-                                    GroupListScreen(
-                                        currentUserId = currentUser.uid,
-                                        onBack = { navController.popBackStack() },
-                                        onCreateGroup = { navController.navigate("create_group") }
-                                    )
-                                }
+                                GroupListScreen(
+                                    currentUserId = user?.uid ?: "",
+                                    onBack = { navController.popBackStack() },
+                                    onCreateGroup = { navController.navigate("create_group") },
+                                    onGroupClick = { groupId -> navController.navigate("group_details/$groupId") }
+                                )
                             }
 
-                            // Study Group Creation
                             composable("create_group") {
-                                user?.let { currentUser ->
-                                    CreateGroupScreen(
-                                        currentUserId = currentUser.uid,
-                                        currentUserName = currentUser.displayName ?: "",
-                                        isCreationEnabled = isCreateGroupEnabled,
-                                        globalMaxMembers = maxMembers.toInt(),
-                                        isMaxEditable = isMaxEditable,
-                                        onBack = { navController.popBackStack() },
-                                        onGroupCreated = { navController.popBackStack() }
+                                CreateGroupScreen(
+                                    currentUserId = user?.uid ?: "",
+                                    currentUserName = user?.displayName ?: "",
+                                    isCreationEnabled = isCreateGroupEnabled,
+                                    globalMaxMembers = maxMembers.toInt(),
+                                    isMaxEditable = isMaxEditable,
+                                    onBack = { navController.popBackStack() },
+                                    onGroupCreated = { navController.popBackStack() }
+                                )
+                            }
+
+                            composable("group_details/{groupId}") { backStackEntry ->
+                                val groupId = backStackEntry.arguments?.getString("groupId") ?: ""
+                                var groupData by remember { mutableStateOf<Group?>(null) }
+
+                                LaunchedEffect(groupId) {
+                                    Firebase.firestore.collection("groups").document(groupId).get().addOnSuccessListener { doc ->
+                                        groupData = doc.toObject(Group::class.java)?.copy(documentId = doc.id)
+                                    }
+                                }
+
+                                if (groupData != null) {
+                                    GroupDetailsScreen(
+                                        group = groupData!!,
+                                        currentUserId = user?.uid ?: "",
+                                        currentUserName = user?.displayName ?: "Student",
+                                        onBack = { navController.popBackStack() }
                                     )
+                                } else {
+                                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                                 }
                             }
 
-                            // Biometric Authentication
+                            // BIOMETRIC AND DASHBOARD ROUTES
                             composable("superuser") {
                                 SuperuserScreen(
                                     activity = this@MainActivity,
@@ -236,24 +196,14 @@ class MainActivity : FragmentActivity() {
                                 )
                             }
 
-                            // Remote Configuration Dashboard
                             composable("superuser_dashboard") {
-                                Column(
-                                    modifier = Modifier.fillMaxSize().padding(24.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.Center
-                                ) {
-                                    Text("Superuser Dashboard", style = MaterialTheme.typography.headlineMedium)
-                                    Text("Fingerprint Verified 🔒", modifier = Modifier.padding(vertical = 16.dp))
-                                    Text(
-                                        "Use the Firebase Console to manage app settings and toggles.",
-                                        textAlign = TextAlign.Center,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                    Button(onClick = { navController.popBackStack() }, modifier = Modifier.padding(top = 32.dp)) {
-                                        Text("Back to Home")
-                                    }
-                                }
+                                SuperuserDashboardScreen(
+                                    isCreationEnabled = isCreateGroupEnabled,
+                                    maxMembers = maxMembers,
+                                    announcement = announcement, // <-- FIXED: Was incorrectly typed as 'announcementHeader'
+                                    onSyncConfigs = { configManager.fetchConfigs() },
+                                    onBack = { navController.popBackStack() }
+                                )
                             }
                         }
                     }
