@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">HanapAral</string>
+    <string name="default_web_client_id">190678685336-g4h48jjqbf48trf6amf62hpu5agfsmhh.apps.googleusercontent.com</string>
+    <string name="default_notification_channel_id">fcm_default_channel</string>
 </resources>
