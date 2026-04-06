@@ -1,38 +1,42 @@
 package com.example.hanaparal.ui.group
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.Groups
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Numbers
+import androidx.compose.material.icons.outlined.School
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.hanaparal.data.model.Group
+import com.example.hanaparal.data.repository.GroupRepository
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CreateGroupScreen(
     currentUserId: String,
     currentUserName: String,
-    isEditable: Boolean = true,          // <-- Receives the lock state from Firebase
-    defaultMaxMembers: Int = 10,         // <-- Receives the default number from Firebase
+    isCreationEnabled: Boolean,
+    globalMaxMembers: Int,
+    isMaxEditable: Boolean,
     onBack: () -> Unit,
     onGroupCreated: () -> Unit
 ) {
     var groupName by remember { mutableStateOf("") }
     var course by remember { mutableStateOf("") }
-    var maxMembersInput by remember { mutableStateOf(defaultMaxMembers.toString()) }
-
-    // If the admin locks the field, force the text box to show the Firebase default number
-    LaunchedEffect(isEditable, defaultMaxMembers) {
-        if (!isEditable) {
-            maxMembersInput = defaultMaxMembers.toString()
-        }
-    }
+    var maxMembersInput by remember { mutableStateOf(globalMaxMembers.toString()) }
+    var isLoading by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Create Study Group") },
+                title = { Text("Create Study Group", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -41,80 +45,102 @@ fun CreateGroupScreen(
             )
         }
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            OutlinedTextField(
-                value = groupName,
-                onValueChange = { groupName = it },
-                label = { Text("Group Name") },
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            OutlinedTextField(
-                value = course,
-                onValueChange = { course = it },
-                label = { Text("Course / Subject") },
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            OutlinedTextField(
-                value = maxMembersInput,
-                onValueChange = { maxMembersInput = it },
-                label = { Text("Max Members") },
-                enabled = isEditable, // <--- THIS IS THE FIREBASE LOCK!
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            // Show a warning message if the field is locked
-            if (!isEditable) {
-                Text(
-                    text = "Max members is currently locked by the Administrator.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error
-                )
-            }
-
-            Spacer(modifier = Modifier.weight(1f))
-
-            Button(
-                onClick = {
-                    // 1. Get the Firestore instance
-                    val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
-
-                    // 2. Prepare the data to save
-                    val newGroup = hashMapOf(
-                        "title" to groupName,
-                        "subject" to course,
-                        "maxMembers" to (maxMembersInput.toIntOrNull() ?: defaultMaxMembers),
-                        "adminId" to currentUserId,
-                        "adminName" to currentUserName,
-                        "members" to listOf(currentUserId), // Admin is automatically the first member
-                        "isOpen" to true,
-                        "description" to ""
-                    )
-
-                    // 3. Save to Firebase Database
-                    db.collection("groups")
-                        .add(newGroup)
-                        .addOnSuccessListener {
-                            // Successfully saved! Now close the screen.
-                            onGroupCreated()
-                        }
-                        .addOnFailureListener { e ->
-                            // If it fails, you can log it or show a toast here
-                            println("Error adding group: $e")
-                        }
-                },
-                modifier = Modifier.fillMaxWidth(),
-                // Button is grayed out until all fields are filled
-                enabled = groupName.isNotBlank() && course.isNotBlank() && maxMembersInput.isNotBlank()
+        // Remote Configuration Toggle
+        if (!isCreationEnabled) {
+            Box(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                contentAlignment = Alignment.Center
             ) {
-                Text("Create Group")
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Outlined.Lock, contentDescription = null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.error)
+                    Spacer(Modifier.height(16.dp))
+                    Text("Group creation is currently disabled.", style = MaterialTheme.typography.bodyLarge)
+                }
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(horizontal = 24.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp)
+            ) {
+                Text(
+                    text = "Group Information",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
+
+                // Input Fields
+                OutlinedTextField(
+                    value = groupName,
+                    onValueChange = { groupName = it },
+                    label = { Text("Group Name") },
+                    leadingIcon = { Icon(Icons.Outlined.Groups, contentDescription = null) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
+                )
+
+                OutlinedTextField(
+                    value = course,
+                    onValueChange = { course = it },
+                    label = { Text("Course / Subject") },
+                    leadingIcon = { Icon(Icons.Outlined.School, contentDescription = null) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
+                )
+
+                // Remote Config Controlled Field
+                OutlinedTextField(
+                    value = maxMembersInput,
+                    onValueChange = {
+                        if ((it.toIntOrNull() ?: 0) <= globalMaxMembers) {
+                            maxMembersInput = it
+                        }
+                    },
+                    label = { Text("Max Members") },
+                    leadingIcon = { Icon(Icons.Outlined.Numbers, contentDescription = null) },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = isMaxEditable,
+                    shape = RoundedCornerShape(14.dp),
+                    supportingText = { Text("Cloud Limit: $globalMaxMembers") }
+                )
+
+                Spacer(modifier = Modifier.weight(1f))
+
+                // Cloud Storage Logic
+                Button(
+                    onClick = {
+                        isLoading = true
+                        val group = Group(
+                            groupId = "",
+                            documentId = "",
+                            title = groupName,
+                            subject = course,
+                            description = "",
+                            adminId = currentUserId,
+                            adminName = currentUserName,
+                            members = listOf(currentUserId),
+                            maxMembers = maxMembersInput.toIntOrNull() ?: globalMaxMembers,
+                            isOpen = true
+                        )
+
+                        GroupRepository.createGroup(group) { success, _ ->
+                            isLoading = false
+                            if (success) onGroupCreated()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    enabled = groupName.isNotBlank() && course.isNotBlank() && !isLoading
+                ) {
+                    if (isLoading) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary)
+                    } else {
+                        Text("Create Group", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
             }
         }
     }
